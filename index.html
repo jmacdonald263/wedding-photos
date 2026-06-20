@@ -504,11 +504,18 @@
     tileLink.href = "https://drive.google.com/file/d/" + galleryFile.id + "/view";
     tileLink.target = "_blank";
     tileLink.rel = "noopener";
+    tileLink.setAttribute("aria-label", galleryFile.name);
 
     const thumbnailImage = document.createElement("img");
     thumbnailImage.loading = "lazy";
-    thumbnailImage.alt = galleryFile.name;
+    thumbnailImage.alt = "";
     thumbnailImage.src = "https://drive.google.com/thumbnail?id=" + galleryFile.id + "&sz=w600";
+    // Drive can take a few seconds to generate a thumbnail after upload. Until
+    // it exists the request 404s, so hide the broken image and leave the tile
+    // as a quiet placeholder rather than showing a broken-image icon.
+    thumbnailImage.addEventListener("error", function () {
+      thumbnailImage.style.display = "none";
+    });
 
     tileLink.appendChild(thumbnailImage);
 
