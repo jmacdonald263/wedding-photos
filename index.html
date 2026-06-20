@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hannah &amp; Jamie &middot; Share your photos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+<style>
+  :root {
+    --parchment: #F6EFE2;
+    --ink: #123A3A;
+    --teal: #1C4E4A;
+    --ember: #C2562A;
+    --ember-soft: #D97A4E;
+    --stone: #8A8073;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--parchment);
+    color: var(--ink);
+    font-family: "Inter", system-ui, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    display: flex;
+    justify-content: center;
+    padding: 2rem 1.25rem 4rem;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 30rem;
+  }
+
+  .eyebrow {
+    text-align: center;
+    font-size: 0.8rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--stone);
+    margin: 0 0 0.75rem;
+  }
+
+  .names {
+    text-align: center;
+    font-family: "Cormorant Garamond", serif;
+    font-style: italic;
+    font-weight: 600;
+    color: var(--ink);
+    font-size: clamp(2.75rem, 12vw, 4rem);
+    line-height: 1.02;
+    margin: 0;
+  }
+
+  .divider {
+    display: block;
+    margin: 0.85rem auto 1.1rem;
+    width: 11rem;
+    max-width: 70%;
+    height: auto;
+    color: var(--ember);
+  }
+
+  .instruction {
+    text-align: center;
+    color: var(--stone);
+    font-size: 1.02rem;
+    line-height: 1.5;
+    margin: 0 auto 2rem;
+    max-width: 24rem;
+  }
+
+  .choose-button {
+    display: block;
+    width: 100%;
+    border: none;
+    border-radius: 0.75rem;
+    background: var(--ember);
+    color: var(--parchment);
+    font-family: inherit;
+    font-size: 1.15rem;
+    font-weight: 600;
+    padding: 1.1rem 1.25rem;
+    cursor: pointer;
+    transition: background-color 0.18s ease;
+  }
+
+  .choose-button:hover { background: var(--ember-soft); }
+
+  .choose-button:focus-visible,
+  .name-input:focus-visible {
+    outline: 3px solid var(--teal);
+    outline-offset: 2px;
+  }
+
+  .name-input {
+    display: block;
+    width: 100%;
+    margin-top: 0.85rem;
+    border: 1.5px solid var(--stone);
+    border-radius: 0.75rem;
+    background: #FFFDF8;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 1rem;
+    padding: 0.9rem 1rem;
+  }
+
+  .name-input::placeholder { color: var(--stone); }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    border: 0;
+  }
+
+  .upload-list {
+    list-style: none;
+    margin: 1.75rem 0 0;
+    padding: 0;
+  }
+
+  .empty-state {
+    text-align: center;
+    color: var(--stone);
+    font-size: 0.95rem;
+    font-style: italic;
+    margin: 1.75rem 0 0;
+  }
+
+  .upload-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.7rem 0;
+    border-bottom: 1px solid rgba(138, 128, 115, 0.28);
+  }
+
+  .upload-row .file-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.95rem;
+    color: var(--ink);
+  }
+
+  .upload-row .file-status {
+    flex: 0 0 auto;
+    font-size: 0.85rem;
+    color: var(--stone);
+    text-align: right;
+  }
+
+  .upload-row .file-status.is-done { color: var(--ember); font-weight: 600; }
+  .upload-row .file-status.is-failed { color: var(--ember); }
+  .upload-row .file-status.is-skipped { color: var(--stone); }
+
+  .retry-button {
+    border: none;
+    background: none;
+    color: var(--ember);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .retry-button:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+<main class="page">
+  <p class="eyebrow">18 July 2026 &middot; Westray, Orkney</p>
+  <h1 class="names">Hannah &amp; Jamie</h1>
+
+  <!-- Signature motif: a single thin hand-drawn coastline wave in ember -->
+  <svg class="divider" viewBox="0 0 220 16" fill="none" aria-hidden="true">
+    <path d="M2 9 C 24 2, 40 2, 58 8 S 96 14, 116 8 S 158 2, 178 8 S 208 13, 218 7"
+          stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  </svg>
+
+  <p class="instruction">Share your photos and videos from the day. Pick as many as you like.</p>
+
+  <button type="button" class="choose-button" id="chooseButton">Choose photos or videos</button>
+  <input
+    type="file"
+    id="fileInput"
+    class="visually-hidden"
+    accept="image/*,video/*"
+    multiple>
+
+  <label class="visually-hidden" for="uploaderNameInput">Your name (optional)</label>
+  <input
+    type="text"
+    id="uploaderNameInput"
+    class="name-input"
+    placeholder="Your name (optional)"
+    autocomplete="name">
+
+  <p class="empty-state" id="emptyState">Your photos will appear here as they upload.</p>
+  <ul class="upload-list" id="uploadList" aria-live="polite"></ul>
+</main>
+
+<script>
+  const uploadEndpointUrl = "https://script.google.com/macros/s/AKfycbyvf5k68NqSBU6idiImJaKJGE0C4aDPlWhCR1nQFYTCbkK8ZGhGofsoGX-nZUwHTLyU/exec";
+
+  // 35 MB of original file. The Apps Script POST limit is 50 MB and base64
+  // inflates the payload by roughly a third, so this is the safe ceiling.
+  const maximumFileSizeInBytes = 35 * 1024 * 1024;
+
+  const chooseButton = document.getElementById("chooseButton");
+  const fileInput = document.getElementById("fileInput");
+  const uploaderNameInput = document.getElementById("uploaderNameInput");
+  const uploadList = document.getElementById("uploadList");
+  const emptyState = document.getElementById("emptyState");
+
+  // Single sequential queue. Island signal can be patchy, so we upload one
+  // file at a time rather than firing everything in parallel.
+  const uploadQueue = [];
+  let isProcessingQueue = false;
+
+  chooseButton.addEventListener("click", function () {
+    fileInput.click();
+  });
+
+  fileInput.addEventListener("change", function () {
+    const selectedFiles = Array.from(fileInput.files);
+    for (const selectedFile of selectedFiles) {
+      addFileToQueue(selectedFile);
+    }
+    // Reset so picking the same file again still fires a change event.
+    fileInput.value = "";
+    processQueue();
+  });
+
+  function addFileToQueue(selectedFile) {
+    emptyState.style.display = "none";
+
+    const rowElement = document.createElement("li");
+    rowElement.className = "upload-row";
+
+    const fileNameElement = document.createElement("span");
+    fileNameElement.className = "file-name";
+    fileNameElement.textContent = selectedFile.name;
+
+    const fileStatusElement = document.createElement("span");
+    fileStatusElement.className = "file-status";
+
+    rowElement.appendChild(fileNameElement);
+    rowElement.appendChild(fileStatusElement);
+    uploadList.appendChild(rowElement);
+
+    if (selectedFile.size > maximumFileSizeInBytes) {
+      fileStatusElement.textContent = "This file is too large to upload here.";
+      fileStatusElement.classList.add("is-skipped");
+      return;
+    }
+
+    fileStatusElement.textContent = "Pending";
+
+    uploadQueue.push({
+      file: selectedFile,
+      statusElement: fileStatusElement,
+    });
+  }
+
+  async function processQueue() {
+    if (isProcessingQueue) {
+      return;
+    }
+    isProcessingQueue = true;
+
+    while (uploadQueue.length > 0) {
+      const queueItem = uploadQueue.shift();
+      await uploadSingleFile(queueItem);
+    }
+
+    isProcessingQueue = false;
+  }
+
+  async function uploadSingleFile(queueItem) {
+    const { file, statusElement } = queueItem;
+
+    statusElement.className = "file-status";
+    statusElement.textContent = "Uploading";
+
+    const firstAttemptSucceeded = await sendFile(file);
+    if (firstAttemptSucceeded) {
+      markRowAsDone(statusElement);
+      return;
+    }
+
+    // One retry. Sequential upload with a single retry per file is the most
+    // reliable choice on a patchy connection.
+    statusElement.textContent = "Uploading";
+    const retryAttemptSucceeded = await sendFile(file);
+    if (retryAttemptSucceeded) {
+      markRowAsDone(statusElement);
+      return;
+    }
+
+    markRowAsFailed(statusElement, queueItem);
+  }
+
+  async function sendFile(file) {
+    try {
+      const fileData = await readFileAsBase64(file);
+
+      const response = await fetch(uploadEndpointUrl, {
+        method: "POST",
+        // text/plain keeps this a CORS "simple request" so the browser skips
+        // the preflight that Apps Script web apps cannot answer.
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          fileData: fileData,
+          uploaderName: uploaderNameInput.value.trim(),
+        }),
+      });
+
+      const responseText = await response.text();
+
+      try {
+        const parsedResponse = JSON.parse(responseText);
+        return parsedResponse.status === "success";
+      } catch (parseError) {
+        // CORS response-reading edge case: if the request completed but the
+        // body is unreadable, treat completion as optimistic success.
+        return response.ok;
+      }
+    } catch (networkError) {
+      return false;
+    }
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise(function (resolve, reject) {
+      const fileReader = new FileReader();
+      fileReader.onload = function () {
+        const dataUrlResult = fileReader.result;
+        const base64Payload = dataUrlResult.split(",")[1];
+        resolve(base64Payload);
+      };
+      fileReader.onerror = function () {
+        reject(fileReader.error);
+      };
+      fileReader.readAsDataURL(file);
+    });
+  }
+
+  function markRowAsDone(statusElement) {
+    statusElement.className = "file-status is-done";
+    statusElement.textContent = "Uploaded ✓";
+  }
+
+  function markRowAsFailed(statusElement, queueItem) {
+    statusElement.className = "file-status is-failed";
+    statusElement.textContent = "";
+
+    const retryButton = document.createElement("button");
+    retryButton.type = "button";
+    retryButton.className = "retry-button";
+    retryButton.textContent = "Upload failed. Tap to try again.";
+    retryButton.addEventListener("click", function () {
+      retryButton.remove();
+      uploadQueue.push(queueItem);
+      processQueue();
+    });
+
+    statusElement.appendChild(retryButton);
+  }
+</script>
+</body>
+</html>
