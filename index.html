@@ -96,26 +96,10 @@
 
   .choose-button:hover { background: var(--ember-soft); }
 
-  .choose-button:focus-visible,
-  .name-input:focus-visible {
+  .choose-button:focus-visible {
     outline: 3px solid var(--teal);
     outline-offset: 2px;
   }
-
-  .name-input {
-    display: block;
-    width: 100%;
-    margin-top: 0.85rem;
-    border: 1.5px solid var(--stone);
-    border-radius: 0.75rem;
-    background: #FFFDF8;
-    color: var(--ink);
-    font-family: inherit;
-    font-size: 1rem;
-    padding: 0.9rem 1rem;
-  }
-
-  .name-input::placeholder { color: var(--stone); }
 
   .visually-hidden {
     position: absolute;
@@ -195,7 +179,7 @@
 </style>
 
 <main class="page">
-  <p class="eyebrow">18 July 2026 &middot; Westray, Orkney</p>
+  <p class="eyebrow">18 July 2026</p>
   <h1 class="names">Hannah &amp; Jamie</h1>
 
   <!-- Signature motif: a single thin hand-drawn coastline wave in ember -->
@@ -214,14 +198,6 @@
     accept="image/*,video/*"
     multiple>
 
-  <label class="visually-hidden" for="uploaderNameInput">Your name (optional)</label>
-  <input
-    type="text"
-    id="uploaderNameInput"
-    class="name-input"
-    placeholder="Your name (optional)"
-    autocomplete="name">
-
   <p class="empty-state" id="emptyState">Your photos will appear here as they upload.</p>
   <ul class="upload-list" id="uploadList" aria-live="polite"></ul>
 </main>
@@ -235,7 +211,6 @@
 
   const chooseButton = document.getElementById("chooseButton");
   const fileInput = document.getElementById("fileInput");
-  const uploaderNameInput = document.getElementById("uploaderNameInput");
   const uploadList = document.getElementById("uploadList");
   const emptyState = document.getElementById("emptyState");
 
@@ -340,7 +315,6 @@
           fileName: file.name,
           mimeType: file.type || "application/octet-stream",
           fileData: fileData,
-          uploaderName: uploaderNameInput.value.trim(),
         }),
       });
 

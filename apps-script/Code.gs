@@ -6,11 +6,10 @@ function doPost(e) {
     const fileName = requestBody.fileName;
     const mimeType = requestBody.mimeType;
     const fileData = requestBody.fileData;
-    const uploaderName = requestBody.uploaderName;
 
     const decodedBytes = Utilities.base64Decode(fileData);
 
-    const storedFileName = buildStoredFileName(uploaderName, fileName);
+    const storedFileName = buildStoredFileName(fileName);
     const fileBlob = Utilities.newBlob(decodedBytes, mimeType, storedFileName);
 
     const uploadFolder = DriveApp.getFolderById(uploadFolderId);
@@ -22,18 +21,9 @@ function doPost(e) {
   }
 }
 
-function buildStoredFileName(uploaderName, originalFileName) {
-  const sanitisedUploaderName = sanitiseToSafeToken(uploaderName);
+function buildStoredFileName(originalFileName) {
   const timestamp = Utilities.formatDate(new Date(), "Europe/London", "yyyyMMdd-HHmmss");
-  return sanitisedUploaderName + "_" + timestamp + "_" + originalFileName;
-}
-
-function sanitiseToSafeToken(rawName) {
-  if (!rawName) {
-    return "guest";
-  }
-  const safeToken = rawName.trim().replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  return safeToken.length > 0 ? safeToken : "guest";
+  return timestamp + "_" + originalFileName;
 }
 
 function jsonResponse(payloadObject) {
