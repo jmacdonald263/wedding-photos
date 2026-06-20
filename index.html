@@ -500,6 +500,10 @@
         endpoint: workerBaseUrl + "/",
         chunkSize: tusChunkSizeInBytes,
         retryDelays: [0, 1000, 3000, 5000, 10000, 20000],
+        // Some networks/security software block the HTTP PATCH method outright,
+        // which leaves the upload stuck at 0%. Send PATCH as a POST carrying an
+        // X-HTTP-Method-Override header so those networks let it through.
+        overridePatchMethod: true,
         // Forget the upload once done, so re-picking a file never tries to
         // resume an already-finished (or expired) Drive session.
         removeFingerprintOnSuccess: true,

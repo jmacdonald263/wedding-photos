@@ -37,10 +37,13 @@ export default {
       }
       if (url.pathname.startsWith("/u/")) {
         const uploadToken = url.pathname.slice("/u/".length);
+        const methodOverride = (request.headers.get("X-HTTP-Method-Override") || "").toUpperCase();
         if (request.method === "HEAD") {
           return corsResponse(request, env, await headUpload(env, uploadToken));
         }
-        if (request.method === "PATCH") {
+        // Accept PATCH directly, or as a POST carrying X-HTTP-Method-Override:
+        // PATCH for networks that block the PATCH method entirely.
+        if (request.method === "PATCH" || (request.method === "POST" && methodOverride === "PATCH")) {
           return corsResponse(request, env, await patchUpload(request, env, uploadToken));
         }
       }
