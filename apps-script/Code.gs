@@ -28,7 +28,42 @@ function doPost(e) {
     const uploadFolder = DriveApp.getFolderById(uploadFolderId);
     const createdFile = uploadFolder.createFile(fileBlob);
 
+    // Make the file viewable by anyone with the link so its thumbnail renders
+    // in the shared gallery. The folder itself stays private and the file IDs
+    // are long and unguessable.
+    createdFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
     return jsonResponse({ status: "success", fileId: createdFile.getId() });
+  } catch (error) {
+    return jsonResponse({ status: "error", message: String(error) });
+  }
+}
+
+function doGet() {
+  try {
+    const uploadFolder = DriveApp.getFolderById(uploadFolderId);
+    const fileIterator = uploadFolder.getFiles();
+
+    const galleryItems = [];
+    while (fileIterator.hasNext()) {
+      const file = fileIterator.next();
+      const mimeType = file.getMimeType();
+      if (!isAllowedMimeType(mimeType)) {
+        continue;
+      }
+      galleryItems.push({
+        id: file.getId(),
+        name: file.getName(),
+        mimeType: mimeType,
+        createdAt: file.getDateCreated().getTime(),
+      });
+    }
+
+    galleryItems.sort(function (firstItem, secondItem) {
+      return secondItem.createdAt - firstItem.createdAt;
+    });
+
+    return jsonResponse({ status: "success", files: galleryItems });
   } catch (error) {
     return jsonResponse({ status: "error", message: String(error) });
   }

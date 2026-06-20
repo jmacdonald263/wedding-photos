@@ -173,6 +173,77 @@
     outline-offset: 2px;
   }
 
+  .text-link {
+    display: block;
+    margin: 1.75rem auto 0;
+    border: none;
+    background: none;
+    color: var(--ember);
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+    padding: 0.25rem;
+  }
+
+  .text-link:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
+  }
+
+  .gallery-status {
+    text-align: center;
+    color: var(--stone);
+    font-size: 0.95rem;
+    margin: 1.5rem 0 0;
+  }
+
+  .gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr));
+    gap: 0.5rem;
+    margin-top: 1.25rem;
+  }
+
+  .gallery-tile {
+    position: relative;
+    display: block;
+    aspect-ratio: 1 / 1;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background: rgba(138, 128, 115, 0.18);
+  }
+
+  .gallery-tile img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .gallery-tile:focus-visible {
+    outline: 3px solid var(--teal);
+    outline-offset: 2px;
+  }
+
+  .gallery-tile .play-badge {
+    position: absolute;
+    right: 0.4rem;
+    bottom: 0.4rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    background: rgba(18, 58, 58, 0.72);
+    color: var(--parchment);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    line-height: 1;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
   }
@@ -190,16 +261,26 @@
 
   <p class="instruction">Share your photos and videos from the day. Pick as many as you like.</p>
 
-  <button type="button" class="choose-button" id="chooseButton">Choose photos or videos</button>
-  <input
-    type="file"
-    id="fileInput"
-    class="visually-hidden"
-    accept="image/*,video/*"
-    multiple>
+  <section id="uploadView">
+    <button type="button" class="choose-button" id="chooseButton">Choose photos or videos</button>
+    <input
+      type="file"
+      id="fileInput"
+      class="visually-hidden"
+      accept="image/*,video/*"
+      multiple>
 
-  <p class="empty-state" id="emptyState">Your photos will appear here as they upload.</p>
-  <ul class="upload-list" id="uploadList" aria-live="polite"></ul>
+    <p class="empty-state" id="emptyState">Your photos will appear here as they upload.</p>
+    <ul class="upload-list" id="uploadList" aria-live="polite"></ul>
+
+    <button type="button" class="text-link" id="showGalleryButton">View everyone's photos</button>
+  </section>
+
+  <section id="galleryView" hidden>
+    <button type="button" class="text-link" id="showUploadButton">&larr; Add your photos</button>
+    <p class="gallery-status" id="galleryStatus">Loading photos&hellip;</p>
+    <div class="gallery-grid" id="galleryGrid"></div>
+  </section>
 </main>
 
 <script>
@@ -213,6 +294,13 @@
   const fileInput = document.getElementById("fileInput");
   const uploadList = document.getElementById("uploadList");
   const emptyState = document.getElementById("emptyState");
+
+  const uploadView = document.getElementById("uploadView");
+  const galleryView = document.getElementById("galleryView");
+  const showGalleryButton = document.getElementById("showGalleryButton");
+  const showUploadButton = document.getElementById("showUploadButton");
+  const galleryStatus = document.getElementById("galleryStatus");
+  const galleryGrid = document.getElementById("galleryGrid");
 
   // Single sequential queue. Island signal can be patchy, so we upload one
   // file at a time rather than firing everything in parallel.
@@ -368,6 +456,70 @@
     });
 
     statusElement.appendChild(retryButton);
+  }
+
+  showGalleryButton.addEventListener("click", function () {
+    uploadView.hidden = true;
+    galleryView.hidden = false;
+    loadGallery();
+  });
+
+  showUploadButton.addEventListener("click", function () {
+    galleryView.hidden = true;
+    uploadView.hidden = false;
+  });
+
+  async function loadGallery() {
+    galleryGrid.textContent = "";
+    galleryStatus.hidden = false;
+    galleryStatus.textContent = "Loading photos…";
+
+    try {
+      const response = await fetch(uploadEndpointUrl, { method: "GET" });
+      const parsedResponse = JSON.parse(await response.text());
+
+      if (parsedResponse.status !== "success") {
+        throw new Error("Gallery request did not succeed.");
+      }
+
+      const galleryFiles = parsedResponse.files;
+      if (galleryFiles.length === 0) {
+        galleryStatus.textContent = "No photos yet. Be the first to add some.";
+        return;
+      }
+
+      galleryStatus.hidden = true;
+      for (const galleryFile of galleryFiles) {
+        galleryGrid.appendChild(buildGalleryTile(galleryFile));
+      }
+    } catch (loadError) {
+      galleryStatus.hidden = false;
+      galleryStatus.textContent = "Could not load the gallery. Tap the link above to try again.";
+    }
+  }
+
+  function buildGalleryTile(galleryFile) {
+    const tileLink = document.createElement("a");
+    tileLink.className = "gallery-tile";
+    tileLink.href = "https://drive.google.com/file/d/" + galleryFile.id + "/view";
+    tileLink.target = "_blank";
+    tileLink.rel = "noopener";
+
+    const thumbnailImage = document.createElement("img");
+    thumbnailImage.loading = "lazy";
+    thumbnailImage.alt = galleryFile.name;
+    thumbnailImage.src = "https://drive.google.com/thumbnail?id=" + galleryFile.id + "&sz=w600";
+
+    tileLink.appendChild(thumbnailImage);
+
+    if (galleryFile.mimeType.indexOf("video/") === 0) {
+      const playBadge = document.createElement("span");
+      playBadge.className = "play-badge";
+      playBadge.textContent = "▶";
+      tileLink.appendChild(playBadge);
+    }
+
+    return tileLink;
   }
 </script>
 </body>
