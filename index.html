@@ -468,6 +468,11 @@
 
   // tus-js-client handles the chunking, progress, retries and resume-after-drop.
   // The Worker turns the tus protocol into a Drive resumable upload.
+  // If an upload makes no progress for this long, treat it as stalled. tus only
+  // retries on an error, but a silently hung connection never errors, so without
+  // this a stalled upload would sit at 0% forever.
+  const uploadStallTimeoutInMilliseconds = 45000;
+
   function uploadSingleFile(queueItem) {
     return new Promise(function (resolve) {
       const { file, statusElement } = queueItem;
@@ -475,26 +480,61 @@
       statusElement.className = "file-status";
       statusElement.textContent = "Uploading";
 
+      let hasSettled = false;
+      let lastProgressTime = Date.now();
+      let stallWatchdogId = null;
+
+      const settle = function (finalAction) {
+        if (hasSettled) {
+          return;
+        }
+        hasSettled = true;
+        if (stallWatchdogId !== null) {
+          window.clearInterval(stallWatchdogId);
+        }
+        finalAction();
+        resolve();
+      };
+
       const upload = new tus.Upload(file, {
         endpoint: workerBaseUrl + "/",
         chunkSize: tusChunkSizeInBytes,
         retryDelays: [0, 1000, 3000, 5000, 10000, 20000],
+        // Forget the upload once done, so re-picking a file never tries to
+        // resume an already-finished (or expired) Drive session.
+        removeFingerprintOnSuccess: true,
         metadata: {
           filename: file.name,
           filetype: resolveFileType(file),
         },
         onProgress: function (bytesUploaded, bytesTotal) {
+          lastProgressTime = Date.now();
           statusElement.textContent = "Uploading " + Math.round((bytesUploaded / bytesTotal) * 100) + "%";
         },
         onSuccess: function () {
-          markRowAsDone(statusElement);
-          resolve();
+          settle(function () {
+            markRowAsDone(statusElement);
+          });
         },
         onError: function (error) {
-          markRowAsFailed(statusElement, queueItem, describeUploadError(error));
-          resolve();
+          settle(function () {
+            markRowAsFailed(statusElement, queueItem, describeUploadError(error));
+          });
         },
       });
+
+      stallWatchdogId = window.setInterval(function () {
+        if (Date.now() - lastProgressTime > uploadStallTimeoutInMilliseconds) {
+          try {
+            upload.abort();
+          } catch (ignored) {
+            // ignore; we are failing the row regardless
+          }
+          settle(function () {
+            markRowAsFailed(statusElement, queueItem, "stalled");
+          });
+        }
+      }, 5000);
 
       upload.start();
     });
