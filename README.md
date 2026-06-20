@@ -4,10 +4,19 @@ A guest photo uploader for Hannah and Jamie's wedding (Westray, Orkney, 18 July 
 
 ## How it works
 
-- `index.html` is a single static page served by GitHub Pages. It reads each file, base64-encodes it, and POSTs it to a Google Apps Script web app.
-- `apps-script/Code.gs` is the backend. It runs as Jamie, decodes each file, and writes it into one Drive folder. Because the script executes as Jamie, every file is owned by his account regardless of which guest uploaded it. Guests authenticate against nothing.
+- `index.html` is a single static page served by GitHub Pages. It uploads each file to a Google Apps Script web app and shows a gallery of everything uploaded so far.
+- `apps-script/Code.gs` is the backend. It runs as Jamie and writes every file into one Drive folder. Because the script executes as Jamie, every file is owned by his account regardless of which guest uploaded it. Guests authenticate against nothing.
 
-The POST is sent as a CORS "simple request" (`Content-Type: text/plain;charset=utf-8`, everything in a JSON string body) so the browser skips the preflight that Apps Script web apps cannot answer.
+All requests to the script are sent as CORS "simple requests" (`Content-Type: text/plain;charset=utf-8`, everything in a JSON string body) so the browser skips the preflight that Apps Script web apps cannot answer.
+
+### Uploads
+
+- **Files up to 35 MB** go up whole in one base64 POST.
+- **Larger files** (long videos) are split into 8 MB chunks. The browser cannot upload to Drive directly because Drive's resumable endpoint sends no CORS headers, so each chunk is POSTed to the script, which forwards it to a Drive resumable session server-to-server (no CORS, no size limit). Progress is reported per chunk.
+
+### Gallery
+
+A "View all photos" toggle fetches the folder listing (`doGet`) and shows a thumbnail grid. Tapping a tile opens a lightbox with prev/next, keyboard and swipe navigation, and a play/pause slideshow; videos play inline. Each uploaded file is shared "anyone with link" so its thumbnail renders. The folder itself stays private, and the file IDs are long and unguessable.
 
 ## Deployment
 
@@ -22,7 +31,7 @@ Sign in to Drive as **jmacd263@gmail.com**, create the folder, open it, and copy
 3. Deploy, New deployment, type **Web app**.
 4. Set **Execute as: Me**.
 5. Set **Who has access: Anyone**.
-6. Authorise when prompted. It warns because the script writes to Drive; that is expected. Click through Advanced, Go to project, Allow.
+6. Authorise when prompted. It warns because the script writes to Drive and makes external requests (the chunked-upload path calls the Drive API); that is expected. Click through Advanced, Go to project, Allow. Make sure the consent screen is for the account that owns the Drive folder.
 7. Copy the resulting `/exec` URL.
 
 ### 3. Frontend
@@ -39,7 +48,9 @@ Put the Pages URL behind a short link or a QR code on the table cards at Harray 
 
 ### Redeploying
 
-If you change `Code.gs` later, use **Manage deployments** and edit the existing deployment so the `/exec` URL stays the same. Creating a fresh deployment gives a new URL and means updating the frontend again.
+If you change `Code.gs` later, use **Manage deployments**, edit the existing deployment, and in the **Version** dropdown choose **New version** before clicking Deploy. This keeps the same `/exec` URL while actually serving the new code. Leaving the version unchanged silently keeps serving the old code; creating a fresh deployment gives a new URL and means updating the frontend again.
+
+If a change adds a new permission (for example the first time the chunked-upload code calls the Drive API), the running web app needs that scope authorised. Editing a deployment does not always prompt for it. The reliable way to grant it: in the editor, pick any function and click **Run**, then complete the authorisation popup (allow popups for `script.google.com` if nothing appears).
 
 ## What I need from you
 
@@ -53,8 +64,9 @@ The Drive and Apps Script steps above are manual browser steps signed in as **jm
 - Upload from iPhone Safari and from Android Chrome. Both must work.
 - Upload a HEIC photo from an iPhone. They store and download fine from Drive; preview support varies but the archive is intact. Confirm it lands.
 - Upload a short video and confirm it lands.
-- Upload a file over the 35 MB cap and confirm it is skipped with the clear message.
+- Upload a large video (over 35 MB) and confirm the chunked path runs (progress percentage climbs) and it lands at full size.
 - Upload several files at once and confirm sequential progress and the per-file done state.
 - Kill the connection mid-upload and confirm the retry and failed states behave.
+- Open "View all photos" and confirm the gallery loads, the lightbox opens, the slideshow plays, and a video plays inline.
 - Confirm every test file appears in the Drive folder, then select all in Drive and download as a single zip to confirm the bulk-download flow.
-- Confirm the success ticks appear. If files land but success never confirms, the frontend already falls back to optimistic success on request completion.
+- Delete any test files from the Drive folder before the day so they do not appear in the gallery.

@@ -244,6 +244,90 @@
     line-height: 1;
   }
 
+  .lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(18, 58, 58, 0.94);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .lightbox[hidden] { display: none; }
+
+  .lightbox-stage {
+    max-width: 92vw;
+    max-height: 84vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .lightbox-stage img {
+    max-width: 92vw;
+    max-height: 84vh;
+    object-fit: contain;
+    border-radius: 0.4rem;
+  }
+
+  .lightbox-stage iframe {
+    width: min(92vw, 80rem);
+    height: 84vh;
+    border: none;
+    border-radius: 0.4rem;
+  }
+
+  .lightbox-control {
+    position: absolute;
+    border: none;
+    background: rgba(246, 239, 226, 0.14);
+    color: var(--parchment);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+  }
+
+  .lightbox-control:hover { background: rgba(246, 239, 226, 0.26); }
+
+  .lightbox-control:focus-visible {
+    outline: 3px solid var(--ember-soft);
+    outline-offset: 2px;
+  }
+
+  .lightbox-prev,
+  .lightbox-next {
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3rem;
+    height: 3rem;
+    font-size: 2rem;
+    line-height: 1;
+  }
+
+  .lightbox-prev { left: 0.6rem; }
+  .lightbox-next { right: 0.6rem; }
+
+  .lightbox-close {
+    top: 0.8rem;
+    right: 0.8rem;
+    width: 2.6rem;
+    height: 2.6rem;
+    font-size: 1.7rem;
+    line-height: 1;
+  }
+
+  .lightbox-play {
+    top: 0.8rem;
+    left: 0.8rem;
+    width: 2.6rem;
+    height: 2.6rem;
+    font-size: 1rem;
+    line-height: 1;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
   }
@@ -273,7 +357,7 @@
     <p class="empty-state" id="emptyState">Your photos will appear here as they upload.</p>
     <ul class="upload-list" id="uploadList" aria-live="polite"></ul>
 
-    <button type="button" class="text-link" id="showGalleryButton">View everyone's photos</button>
+    <button type="button" class="text-link" id="showGalleryButton">View all photos</button>
   </section>
 
   <section id="galleryView" hidden>
@@ -283,12 +367,25 @@
   </section>
 </main>
 
-<script>
-  const uploadEndpointUrl = "https://script.google.com/macros/s/AKfycbws01Lfa1RDc8U_9retagDzatlvaDlnLA0PDGsav04s3FO07H3fyschm2zrQpxMB7o/exec";
+<div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Photo viewer">
+  <button type="button" class="lightbox-control lightbox-close" id="lightboxClose" aria-label="Close">&times;</button>
+  <button type="button" class="lightbox-control lightbox-play" id="lightboxPlay" aria-label="Start slideshow">&#9654;</button>
+  <button type="button" class="lightbox-control lightbox-prev" id="lightboxPrev" aria-label="Previous">&lsaquo;</button>
+  <div class="lightbox-stage" id="lightboxStage"></div>
+  <button type="button" class="lightbox-control lightbox-next" id="lightboxNext" aria-label="Next">&rsaquo;</button>
+</div>
 
-  // 35 MB of original file. The Apps Script POST limit is 50 MB and base64
-  // inflates the payload by roughly a third, so this is the safe ceiling.
-  const maximumFileSizeInBytes = 35 * 1024 * 1024;
+<script>
+  const uploadEndpointUrl = "https://script.google.com/macros/s/AKfycbyzund4IpiriP1lksLJuAVS8BIHR9I9zO4QzdiZ7rwizmCJP8fBZIUwZ3_FNJnC9NHYOQ/exec";
+
+  // Files at or below this size go up in a single base64 POST. Larger files are
+  // sent in chunks that the Apps Script forwards to a Drive resumable session,
+  // which has no size limit.
+  const maximumBase64FileSizeInBytes = 35 * 1024 * 1024;
+
+  // Each chunk must be a multiple of 256 KB (a Drive resumable requirement) and
+  // small enough that its base64 form stays under the Apps Script POST limit.
+  const uploadChunkSizeInBytes = 8 * 1024 * 1024;
 
   const chooseButton = document.getElementById("chooseButton");
   const fileInput = document.getElementById("fileInput");
@@ -301,6 +398,18 @@
   const showUploadButton = document.getElementById("showUploadButton");
   const galleryStatus = document.getElementById("galleryStatus");
   const galleryGrid = document.getElementById("galleryGrid");
+
+  const lightbox = document.getElementById("lightbox");
+  const lightboxStage = document.getElementById("lightboxStage");
+  const lightboxClose = document.getElementById("lightboxClose");
+  const lightboxPrev = document.getElementById("lightboxPrev");
+  const lightboxNext = document.getElementById("lightboxNext");
+  const lightboxPlay = document.getElementById("lightboxPlay");
+
+  const slideshowIntervalInMilliseconds = 4000;
+  let loadedGalleryFiles = [];
+  let lightboxIndex = 0;
+  let slideshowTimerId = null;
 
   // Single sequential queue. Island signal can be patchy, so we upload one
   // file at a time rather than firing everything in parallel.
@@ -338,12 +447,6 @@
     rowElement.appendChild(fileStatusElement);
     uploadList.appendChild(rowElement);
 
-    if (selectedFile.size > maximumFileSizeInBytes) {
-      fileStatusElement.textContent = "This file is too large to upload here.";
-      fileStatusElement.classList.add("is-skipped");
-      return;
-    }
-
     fileStatusElement.textContent = "Pending";
 
     uploadQueue.push({
@@ -372,17 +475,22 @@
     statusElement.className = "file-status";
     statusElement.textContent = "Uploading";
 
-    const firstAttemptSucceeded = await sendFile(file);
-    if (firstAttemptSucceeded) {
-      markRowAsDone(statusElement);
-      return;
+    let uploadSucceeded;
+    if (file.size > maximumBase64FileSizeInBytes) {
+      // Large files are chunked, reporting progress as each chunk lands.
+      uploadSucceeded = await uploadViaChunks(file, function (fractionComplete) {
+        statusElement.textContent = "Uploading " + Math.round(fractionComplete * 100) + "%";
+      });
+    } else {
+      // Smaller files go up in one base64 POST. One retry per file is the most
+      // reliable choice on a patchy connection.
+      uploadSucceeded = await uploadViaBase64(file);
+      if (!uploadSucceeded) {
+        uploadSucceeded = await uploadViaBase64(file);
+      }
     }
 
-    // One retry. Sequential upload with a single retry per file is the most
-    // reliable choice on a patchy connection.
-    statusElement.textContent = "Uploading";
-    const retryAttemptSucceeded = await sendFile(file);
-    if (retryAttemptSucceeded) {
+    if (uploadSucceeded) {
       markRowAsDone(statusElement);
       return;
     }
@@ -390,34 +498,95 @@
     markRowAsFailed(statusElement, queueItem);
   }
 
-  async function sendFile(file) {
+  async function uploadViaChunks(file, onProgress) {
+    try {
+      const startResponse = await postJsonToEndpoint({
+        action: "startResumableUpload",
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+      });
+      if (startResponse.status !== "success" || !startResponse.uploadId) {
+        return false;
+      }
+      const uploadId = startResponse.uploadId;
+
+      let chunkStart = 0;
+      while (chunkStart < file.size) {
+        const chunkEnd = Math.min(chunkStart + uploadChunkSizeInBytes, file.size);
+        const base64Chunk = await readFileAsBase64(file.slice(chunkStart, chunkEnd));
+
+        let chunkResult = await sendChunk(uploadId, base64Chunk, chunkStart, file.size);
+        if (!chunkResult) {
+          chunkResult = await sendChunk(uploadId, base64Chunk, chunkStart, file.size);
+        }
+        if (!chunkResult) {
+          return false;
+        }
+        if (chunkResult.done) {
+          onProgress(1);
+          return true;
+        }
+
+        chunkStart = chunkEnd;
+        if (onProgress) {
+          onProgress(chunkStart / file.size);
+        }
+      }
+
+      return false;
+    } catch (chunkUploadError) {
+      return false;
+    }
+  }
+
+  async function sendChunk(uploadId, base64Chunk, chunkStart, totalSize) {
+    try {
+      const chunkResponse = await postJsonToEndpoint({
+        action: "uploadChunk",
+        uploadId: uploadId,
+        data: base64Chunk,
+        start: chunkStart,
+        total: totalSize,
+      });
+      if (chunkResponse.status !== "success") {
+        return false;
+      }
+      return { done: chunkResponse.done === true };
+    } catch (sendChunkError) {
+      return false;
+    }
+  }
+
+  async function uploadViaBase64(file) {
     try {
       const fileData = await readFileAsBase64(file);
-
-      const response = await fetch(uploadEndpointUrl, {
-        method: "POST",
-        // text/plain keeps this a CORS "simple request" so the browser skips
-        // the preflight that Apps Script web apps cannot answer.
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({
-          fileName: file.name,
-          mimeType: file.type || "application/octet-stream",
-          fileData: fileData,
-        }),
+      const parsedResponse = await postJsonToEndpoint({
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        fileData: fileData,
       });
-
-      const responseText = await response.text();
-
-      try {
-        const parsedResponse = JSON.parse(responseText);
-        return parsedResponse.status === "success";
-      } catch (parseError) {
-        // CORS response-reading edge case: if the request completed but the
-        // body is unreadable, treat completion as optimistic success.
-        return response.ok;
-      }
-    } catch (networkError) {
+      return parsedResponse.status === "success";
+    } catch (base64Error) {
       return false;
+    }
+  }
+
+  async function postJsonToEndpoint(payloadObject) {
+    // text/plain keeps this a CORS "simple request" so the browser skips the
+    // preflight that Apps Script web apps cannot answer.
+    const response = await fetch(uploadEndpointUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payloadObject),
+    });
+
+    const responseText = await response.text();
+    try {
+      return JSON.parse(responseText);
+    } catch (parseError) {
+      // CORS response-reading edge case: if the request completed but the body
+      // is unreadable, treat completion as optimistic success.
+      return { status: response.ok ? "success" : "error" };
     }
   }
 
@@ -482,29 +651,30 @@
         throw new Error("Gallery request did not succeed.");
       }
 
-      const galleryFiles = parsedResponse.files;
-      if (galleryFiles.length === 0) {
+      loadedGalleryFiles = parsedResponse.files;
+      if (loadedGalleryFiles.length === 0) {
         galleryStatus.textContent = "No photos yet. Be the first to add some.";
         return;
       }
 
       galleryStatus.hidden = true;
-      for (const galleryFile of galleryFiles) {
-        galleryGrid.appendChild(buildGalleryTile(galleryFile));
-      }
+      loadedGalleryFiles.forEach(function (galleryFile, fileIndex) {
+        galleryGrid.appendChild(buildGalleryTile(galleryFile, fileIndex));
+      });
     } catch (loadError) {
       galleryStatus.hidden = false;
       galleryStatus.textContent = "Could not load the gallery. Tap the link above to try again.";
     }
   }
 
-  function buildGalleryTile(galleryFile) {
-    const tileLink = document.createElement("a");
-    tileLink.className = "gallery-tile";
-    tileLink.href = "https://drive.google.com/file/d/" + galleryFile.id + "/view";
-    tileLink.target = "_blank";
-    tileLink.rel = "noopener";
-    tileLink.setAttribute("aria-label", galleryFile.name);
+  function buildGalleryTile(galleryFile, fileIndex) {
+    const tileButton = document.createElement("button");
+    tileButton.type = "button";
+    tileButton.className = "gallery-tile";
+    tileButton.setAttribute("aria-label", galleryFile.name);
+    tileButton.addEventListener("click", function () {
+      openLightbox(fileIndex);
+    });
 
     const thumbnailImage = document.createElement("img");
     thumbnailImage.loading = "lazy";
@@ -517,17 +687,143 @@
       thumbnailImage.style.display = "none";
     });
 
-    tileLink.appendChild(thumbnailImage);
+    tileButton.appendChild(thumbnailImage);
 
-    if (galleryFile.mimeType.indexOf("video/") === 0) {
+    if (isVideoFile(galleryFile)) {
       const playBadge = document.createElement("span");
       playBadge.className = "play-badge";
       playBadge.textContent = "▶";
-      tileLink.appendChild(playBadge);
+      tileButton.appendChild(playBadge);
     }
 
-    return tileLink;
+    return tileButton;
   }
+
+  function isVideoFile(galleryFile) {
+    return galleryFile.mimeType.indexOf("video/") === 0;
+  }
+
+  function openLightbox(fileIndex) {
+    lightboxIndex = fileIndex;
+    lightbox.hidden = false;
+    renderLightbox();
+    lightboxClose.focus();
+  }
+
+  function closeLightbox() {
+    stopSlideshow();
+    lightbox.hidden = true;
+    lightboxStage.textContent = "";
+  }
+
+  function renderLightbox() {
+    const galleryFile = loadedGalleryFiles[lightboxIndex];
+    lightboxStage.textContent = "";
+
+    if (isVideoFile(galleryFile)) {
+      // A video pauses the slideshow so it can be watched in full.
+      stopSlideshow();
+      const videoFrame = document.createElement("iframe");
+      videoFrame.src = "https://drive.google.com/file/d/" + galleryFile.id + "/preview";
+      videoFrame.allow = "autoplay";
+      videoFrame.setAttribute("allowfullscreen", "");
+      lightboxStage.appendChild(videoFrame);
+      return;
+    }
+
+    const fullImage = document.createElement("img");
+    fullImage.alt = galleryFile.name;
+    fullImage.src = "https://drive.google.com/thumbnail?id=" + galleryFile.id + "&sz=w1600";
+    lightboxStage.appendChild(fullImage);
+  }
+
+  function showNextItem() {
+    lightboxIndex = (lightboxIndex + 1) % loadedGalleryFiles.length;
+    renderLightbox();
+  }
+
+  function showPreviousItem() {
+    lightboxIndex = (lightboxIndex - 1 + loadedGalleryFiles.length) % loadedGalleryFiles.length;
+    renderLightbox();
+  }
+
+  function startSlideshow() {
+    if (slideshowTimerId !== null) {
+      return;
+    }
+    slideshowTimerId = window.setInterval(showNextItem, slideshowIntervalInMilliseconds);
+    lightboxPlay.innerHTML = "&#10073;&#10073;";
+    lightboxPlay.setAttribute("aria-label", "Pause slideshow");
+  }
+
+  function stopSlideshow() {
+    if (slideshowTimerId === null) {
+      return;
+    }
+    window.clearInterval(slideshowTimerId);
+    slideshowTimerId = null;
+    lightboxPlay.innerHTML = "&#9654;";
+    lightboxPlay.setAttribute("aria-label", "Start slideshow");
+  }
+
+  function toggleSlideshow() {
+    if (slideshowTimerId === null) {
+      startSlideshow();
+    } else {
+      stopSlideshow();
+    }
+  }
+
+  lightboxClose.addEventListener("click", closeLightbox);
+  lightboxNext.addEventListener("click", function () {
+    stopSlideshow();
+    showNextItem();
+  });
+  lightboxPrev.addEventListener("click", function () {
+    stopSlideshow();
+    showPreviousItem();
+  });
+  lightboxPlay.addEventListener("click", toggleSlideshow);
+
+  lightbox.addEventListener("click", function (clickEvent) {
+    // Tapping the dark backdrop (but not the media or controls) closes it.
+    if (clickEvent.target === lightbox) {
+      closeLightbox();
+    }
+  });
+
+  document.addEventListener("keydown", function (keyEvent) {
+    if (lightbox.hidden) {
+      return;
+    }
+    if (keyEvent.key === "Escape") {
+      closeLightbox();
+    } else if (keyEvent.key === "ArrowRight") {
+      stopSlideshow();
+      showNextItem();
+    } else if (keyEvent.key === "ArrowLeft") {
+      stopSlideshow();
+      showPreviousItem();
+    }
+  });
+
+  // Basic swipe navigation for touch devices.
+  let touchStartX = 0;
+  lightboxStage.addEventListener("touchstart", function (touchEvent) {
+    touchStartX = touchEvent.changedTouches[0].screenX;
+  }, { passive: true });
+  lightboxStage.addEventListener("touchend", function (touchEvent) {
+    const horizontalDistance = touchEvent.changedTouches[0].screenX - touchStartX;
+    if (Math.abs(horizontalDistance) < 40) {
+      return;
+    }
+    stopSlideshow();
+    if (horizontalDistance < 0) {
+      showNextItem();
+    } else {
+      showPreviousItem();
+    }
+  });
 </script>
 </body>
 </html>
