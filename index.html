@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js"></script>
 </head>
 <body>
 <style>
@@ -376,16 +377,12 @@
 </div>
 
 <script>
-  const uploadEndpointUrl = "https://script.google.com/macros/s/AKfycbyzund4IpiriP1lksLJuAVS8BIHR9I9zO4QzdiZ7rwizmCJP8fBZIUwZ3_FNJnC9NHYOQ/exec";
+  // Base URL of the Cloudflare Worker that streams uploads into Drive.
+  const workerBaseUrl = "https://wedding-photos-uploader.jmacd263-vinyl-scrobbler.workers.dev";
 
-  // Files at or below this size go up in a single base64 POST. Larger files are
-  // sent in chunks that the Apps Script forwards to a Drive resumable session,
-  // which has no size limit.
-  const maximumBase64FileSizeInBytes = 35 * 1024 * 1024;
-
-  // Each chunk must be a multiple of 256 KB (a Drive resumable requirement) and
-  // small enough that its base64 form stays under the Apps Script POST limit.
-  const uploadChunkSizeInBytes = 8 * 1024 * 1024;
+  // tus uploads in chunks so a dropped connection resumes rather than restarts.
+  // 8 MB is a multiple of 256 KB, which Drive's resumable upload requires.
+  const tusChunkSizeInBytes = 8 * 1024 * 1024;
 
   const chooseButton = document.getElementById("chooseButton");
   const fileInput = document.getElementById("fileInput");
@@ -469,139 +466,37 @@
     isProcessingQueue = false;
   }
 
-  async function uploadSingleFile(queueItem) {
-    const { file, statusElement } = queueItem;
+  // tus-js-client handles the chunking, progress, retries and resume-after-drop.
+  // The Worker turns the tus protocol into a Drive resumable upload.
+  function uploadSingleFile(queueItem) {
+    return new Promise(function (resolve) {
+      const { file, statusElement } = queueItem;
 
-    statusElement.className = "file-status";
-    statusElement.textContent = "Uploading";
+      statusElement.className = "file-status";
+      statusElement.textContent = "Uploading";
 
-    let uploadSucceeded;
-    if (file.size > maximumBase64FileSizeInBytes) {
-      // Large files are chunked, reporting progress as each chunk lands.
-      uploadSucceeded = await uploadViaChunks(file, function (fractionComplete) {
-        statusElement.textContent = "Uploading " + Math.round(fractionComplete * 100) + "%";
+      const upload = new tus.Upload(file, {
+        endpoint: workerBaseUrl + "/",
+        chunkSize: tusChunkSizeInBytes,
+        retryDelays: [0, 1000, 3000, 5000, 10000, 20000],
+        metadata: {
+          filename: file.name,
+          filetype: file.type || "application/octet-stream",
+        },
+        onProgress: function (bytesUploaded, bytesTotal) {
+          statusElement.textContent = "Uploading " + Math.round((bytesUploaded / bytesTotal) * 100) + "%";
+        },
+        onSuccess: function () {
+          markRowAsDone(statusElement);
+          resolve();
+        },
+        onError: function () {
+          markRowAsFailed(statusElement, queueItem);
+          resolve();
+        },
       });
-    } else {
-      // Smaller files go up in one base64 POST. One retry per file is the most
-      // reliable choice on a patchy connection.
-      uploadSucceeded = await uploadViaBase64(file);
-      if (!uploadSucceeded) {
-        uploadSucceeded = await uploadViaBase64(file);
-      }
-    }
 
-    if (uploadSucceeded) {
-      markRowAsDone(statusElement);
-      return;
-    }
-
-    markRowAsFailed(statusElement, queueItem);
-  }
-
-  async function uploadViaChunks(file, onProgress) {
-    try {
-      const startResponse = await postJsonToEndpoint({
-        action: "startResumableUpload",
-        fileName: file.name,
-        mimeType: file.type || "application/octet-stream",
-      });
-      if (startResponse.status !== "success" || !startResponse.uploadId) {
-        return false;
-      }
-      const uploadId = startResponse.uploadId;
-
-      let chunkStart = 0;
-      while (chunkStart < file.size) {
-        const chunkEnd = Math.min(chunkStart + uploadChunkSizeInBytes, file.size);
-        const base64Chunk = await readFileAsBase64(file.slice(chunkStart, chunkEnd));
-
-        let chunkResult = await sendChunk(uploadId, base64Chunk, chunkStart, file.size);
-        if (!chunkResult) {
-          chunkResult = await sendChunk(uploadId, base64Chunk, chunkStart, file.size);
-        }
-        if (!chunkResult) {
-          return false;
-        }
-        if (chunkResult.done) {
-          onProgress(1);
-          return true;
-        }
-
-        chunkStart = chunkEnd;
-        if (onProgress) {
-          onProgress(chunkStart / file.size);
-        }
-      }
-
-      return false;
-    } catch (chunkUploadError) {
-      return false;
-    }
-  }
-
-  async function sendChunk(uploadId, base64Chunk, chunkStart, totalSize) {
-    try {
-      const chunkResponse = await postJsonToEndpoint({
-        action: "uploadChunk",
-        uploadId: uploadId,
-        data: base64Chunk,
-        start: chunkStart,
-        total: totalSize,
-      });
-      if (chunkResponse.status !== "success") {
-        return false;
-      }
-      return { done: chunkResponse.done === true };
-    } catch (sendChunkError) {
-      return false;
-    }
-  }
-
-  async function uploadViaBase64(file) {
-    try {
-      const fileData = await readFileAsBase64(file);
-      const parsedResponse = await postJsonToEndpoint({
-        fileName: file.name,
-        mimeType: file.type || "application/octet-stream",
-        fileData: fileData,
-      });
-      return parsedResponse.status === "success";
-    } catch (base64Error) {
-      return false;
-    }
-  }
-
-  async function postJsonToEndpoint(payloadObject) {
-    // text/plain keeps this a CORS "simple request" so the browser skips the
-    // preflight that Apps Script web apps cannot answer.
-    const response = await fetch(uploadEndpointUrl, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payloadObject),
-    });
-
-    const responseText = await response.text();
-    try {
-      return JSON.parse(responseText);
-    } catch (parseError) {
-      // CORS response-reading edge case: if the request completed but the body
-      // is unreadable, treat completion as optimistic success.
-      return { status: response.ok ? "success" : "error" };
-    }
-  }
-
-  function readFileAsBase64(file) {
-    return new Promise(function (resolve, reject) {
-      const fileReader = new FileReader();
-      fileReader.onload = function () {
-        const dataUrlResult = fileReader.result;
-        const base64Payload = dataUrlResult.split(",")[1];
-        resolve(base64Payload);
-      };
-      fileReader.onerror = function () {
-        reject(fileReader.error);
-      };
-      fileReader.readAsDataURL(file);
+      upload.start();
     });
   }
 
@@ -644,7 +539,7 @@
     galleryStatus.textContent = "Loading photos…";
 
     try {
-      const response = await fetch(uploadEndpointUrl, { method: "GET" });
+      const response = await fetch(workerBaseUrl + "/gallery", { method: "GET" });
       const parsedResponse = JSON.parse(await response.text());
 
       if (parsedResponse.status !== "success") {

@@ -1,0 +1,16 @@
+name = "wedding-photos-uploader"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# Non-secret config. ALLOWED_ORIGIN must be the GitHub Pages origin (no
+# trailing slash). DRIVE_FOLDER_ID is filled in after the one-time /setup call.
+[vars]
+ALLOWED_ORIGIN = "https://jmacdonald263.github.io,http://127.0.0.1:8765,http://localhost:8765"
+DRIVE_FOLDER_ID = "12r5Db_uWfNXa2eIHMx2artXkUgSaasLI"
+
+# Secrets are NOT stored here. Set them once with:
+#   wrangler secret put GOOGLE_CLIENT_ID
+#   wrangler secret put GOOGLE_CLIENT_SECRET
+#   wrangler secret put GOOGLE_REFRESH_TOKEN
+#   wrangler secret put STATE_SECRET
+#   wrangler secret put SETUP_SECRET
