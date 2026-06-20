@@ -189,6 +189,48 @@ function isAllowedMimeType(mimeType) {
   );
 }
 
+const EXTENSION_MIME_TYPES = {
+  ".heic": "image/heic",
+  ".heif": "image/heif",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
+  ".mov": "video/quicktime",
+  ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
+  ".3gp": "video/3gpp",
+  ".avi": "video/x-msvideo",
+  ".mkv": "video/x-matroska",
+  ".webm": "video/webm",
+};
+
+function mimeTypeFromExtension(fileName) {
+  const lowerName = (fileName || "").toLowerCase();
+  for (const extension in EXTENSION_MIME_TYPES) {
+    if (lowerName.endsWith(extension)) {
+      return EXTENSION_MIME_TYPES[extension];
+    }
+  }
+  return null;
+}
+
+// Return a usable image/video mime type, or null if the file is neither.
+function resolveUploadMimeType(reportedMimeType, fileName) {
+  if (isAllowedMimeType(reportedMimeType)) {
+    return reportedMimeType;
+  }
+  const fromExtension = mimeTypeFromExtension(fileName);
+  if (fromExtension) {
+    return fromExtension;
+  }
+  return null;
+}
+
 function decodeMetadataValue(encodedValue) {
   const binary = atob(encodedValue);
   const bytes = new Uint8Array(binary.length);
@@ -216,8 +258,10 @@ async function createUpload(request, env, url) {
   }
 
   const fileName = metadata.filename || "upload";
-  const mimeType = metadata.filetype || "application/octet-stream";
-  if (!isAllowedMimeType(mimeType)) {
+  // Some phones report an empty or generic type for videos/HEIC. Fall back to
+  // the file extension so those still upload (and Drive stores a real type).
+  const mimeType = resolveUploadMimeType(metadata.filetype, fileName);
+  if (!mimeType) {
     return new Response("Unsupported file type", { status: 415 });
   }
 
